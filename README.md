@@ -15,12 +15,13 @@ Chat with your PDFs. Every answer is grounded in your documents and cited by pag
 
 ## Architecture
 ```
-PDF -> PyMuPDF (per page) -> sentence-aware chunks -> MiniLM embeddings -> ChromaDB
+PDF -> PyMuPDF (per page) -> sentence-aware chunks -> MiniLM embeddings -> vector store
+(ChromaDB when run locally, a private in-memory numpy store per visitor when hosted)
 Question -> vector search + BM25 -> RRF fusion -> top-k passages -> Gemini -> cited answer
 ```
 
 ## Tech stack
-Python, Streamlit, ChromaDB, Sentence-Transformers (all-MiniLM-L6-v2), rank-bm25, PyMuPDF, Google Gemini API
+Python, Streamlit, ChromaDB (local) / in-memory vector store (hosted), Sentence-Transformers (all-MiniLM-L6-v2), rank-bm25, PyMuPDF, Google Gemini API
 
 ## Run locally
 ```

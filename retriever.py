@@ -8,13 +8,14 @@ Their rankings are merged with Reciprocal Rank Fusion (RRF).
 Storage modes
   * local  : one persistent database in ./vividmind_db (your own machine)
   * public : one private in-memory collection PER VISITOR SESSION, deleted
-             automatically after a few hours (used on Hugging Face Spaces)
+             automatically after a few hours (used when hosted online). It uses
+             a small built-in numpy store, so it needs no ChromaDB and works on
+             any Python version.
 """
-import functools
 import re
+import threading
 import time
 
-import chromadb
 import numpy as np
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
@@ -30,45 +31,96 @@ def load_embedder():
 
 
 # ------------------------------------------------------------ storage
-@functools.lru_cache(maxsize=1)
-def _ephemeral_client():
-    return chromadb.EphemeralClient()
+class MemoryCollection:
+    """Tiny in-memory vector store exposing the part of the Chroma API VividMind uses."""
+
+    def __init__(self, name, metadata=None):
+        self.name = name
+        self.metadata = metadata or {}
+        self._items = {}  # id -> (document, metadata, embedding)
+
+    def count(self):
+        return len(self._items)
+
+    @staticmethod
+    def _matches(meta, where):
+        if not where:
+            return True
+        for field, cond in where.items():
+            value = meta.get(field)
+            if isinstance(cond, dict):
+                if "$in" in cond and value not in cond["$in"]:
+                    return False
+            elif value != cond:
+                return False
+        return True
+
+    def _select(self, ids=None, where=None):
+        keys = ids if ids is not None else list(self._items)
+        return [
+            i for i in keys
+            if i in self._items and self._matches(self._items[i][1], where)
+        ]
+
+    def upsert(self, ids, documents, metadatas, embeddings):
+        for i, d, m, e in zip(ids, documents, metadatas, embeddings):
+            self._items[i] = (d, dict(m), np.asarray(e, dtype=np.float32))
+
+    def get(self, ids=None, where=None, include=None):
+        sel = self._select(ids, where)
+        return {
+            "ids": sel,
+            "documents": [self._items[i][0] for i in sel],
+            "metadatas": [self._items[i][1] for i in sel],
+            "embeddings": [self._items[i][2] for i in sel],
+        }
+
+    def query(self, query_embeddings, n_results=10, where=None, include=None):
+        sel = self._select(None, where)
+        if not sel:
+            return {"ids": [[]], "distances": [[]]}
+        matrix = np.stack([self._items[i][2] for i in sel])
+        sims = matrix @ np.asarray(query_embeddings[0], dtype=np.float32)
+        order = np.argsort(-sims)[:n_results]
+        return {
+            "ids": [[sel[i] for i in order]],
+            "distances": [[float(1.0 - sims[i]) for i in order]],
+        }
+
+    def delete(self, ids=None, where=None):
+        for i in self._select(ids, where):
+            del self._items[i]
 
 
-def cleanup_stale_sessions(client=None):
-    """Delete public-session collections older than SESSION_TTL_S (best effort)."""
-    client = client or _ephemeral_client()
-    try:
-        now = time.time()
-        for c in client.list_collections():
-            name = c if isinstance(c, str) else c.name
-            if not name.startswith("vm_"):
-                continue
-            created = float((client.get_collection(name).metadata or {}).get("created", now))
-            if now - created > SESSION_TTL_S:
-                client.delete_collection(name)
-                invalidate_index(name)
-    except Exception:
-        pass
+_MEM_COLLECTIONS = {}
+_MEM_LOCK = threading.Lock()
+
+
+def cleanup_stale_sessions():
+    """Delete public-session collections older than SESSION_TTL_S."""
+    now = time.time()
+    for name, col in list(_MEM_COLLECTIONS.items()):
+        if now - float(col.metadata.get("created", now)) > SESSION_TTL_S:
+            _MEM_COLLECTIONS.pop(name, None)
+            invalidate_index(name)
 
 
 def get_collection(session_id=None, public=False, path: str = DB_PATH):
-    """local: shared persistent collection. public: private collection per session."""
+    """local: shared persistent ChromaDB collection. public: private store per session."""
     if not public:
+        import chromadb  # imported only when running locally
+
         client = chromadb.PersistentClient(path=path)
         return client.get_or_create_collection(
             COLLECTION, metadata={"hnsw:space": "cosine"}
         )
 
-    client = _ephemeral_client()
     name = f"vm_{session_id}"
-    try:
-        return client.get_collection(name)
-    except Exception:
-        cleanup_stale_sessions(client)
-        return client.create_collection(
-            name, metadata={"hnsw:space": "cosine", "created": time.time()}
-        )
+    with _MEM_LOCK:
+        if name not in _MEM_COLLECTIONS:
+            cleanup_stale_sessions()
+            _MEM_COLLECTIONS[name] = MemoryCollection(name, {"created": time.time()})
+        return _MEM_COLLECTIONS[name]
 
 
 def list_docs(collection) -> dict:
