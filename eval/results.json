@@ -1,0 +1,22 @@
+{
+  "vector": {
+    "n_answerable": 30,
+    "hit@1": 0.6666666666666666,
+    "hit@3": 1.0,
+    "hit@5": 1.0,
+    "mrr": 0.8,
+    "n_unanswerable": 5,
+    "refusal_rate": 0.6,
+    "misses": []
+  },
+  "hybrid": {
+    "n_answerable": 30,
+    "hit@1": 0.8333333333333334,
+    "hit@3": 1.0,
+    "hit@5": 1.0,
+    "mrr": 0.9055555555555556,
+    "n_unanswerable": 5,
+    "refusal_rate": 0.6,
+    "misses": []
+  }
+}

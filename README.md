@@ -1,18 +1,8 @@
----
-title: VividMind
-emoji: 🧠
-colorFrom: purple
-colorTo: blue
-sdk: streamlit
-app_file: app.py
-pinned: false
----
-
 # 🧠 VividMind
 
 Chat with your PDFs. Every answer is grounded in your documents and cited by page.
 
-**Live demo:** _add your Hugging Face Space link_
+**Live demo:** _add your Streamlit Community Cloud link_
 
 ## Features
 - **Hybrid retrieval:** BM25 keyword search + vector search, merged with Reciprocal Rank Fusion
@@ -20,7 +10,7 @@ Chat with your PDFs. Every answer is grounded in your documents and cited by pag
 - **Strictness control:** refuses to answer instead of hallucinating when nothing relevant is found
 - **Overview mode** for summary-style questions that no single passage can answer
 - Multi-document library with a per-document search filter, follow-up questions and streamed answers
-- **Private per-visitor sessions** in the hosted version, with bring-your-own Gemini API key
+- **Private per-visitor sessions** in the hosted version (set `VIVIDMIND_PUBLIC=1`), with bring-your-own Gemini API key
 - Evaluation script (Hit@k, MRR) to compare vector-only and hybrid retrieval
 
 ## Architecture
